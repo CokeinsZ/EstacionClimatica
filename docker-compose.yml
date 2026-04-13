@@ -1,0 +1,32 @@
+version: '3.8'
+
+services:
+  rabbitmq:
+    image: rabbitmq:3-management
+    container_name: rabbitmq_iot
+    environment:
+      RABBITMQ_DEFAULT_USER: ${MQTT_USER}
+      RABBITMQ_DEFAULT_PASS: ${MQTT_PASSWORD}
+    ports:
+      - "5672:5672"
+      - "15672:15672"
+      - "1883:1883"
+    command: >
+      bash -c "rabbitmq-plugins enable --offline rabbitmq_mqtt; rabbitmq-server"
+    volumes:
+      - rabbitmq_data:/var/lib/rabbitmq
+
+  iot_logger:
+    build: .
+    container_name: python_iot_logger
+    restart: unless-stopped
+    environment:
+      - URL=${URL}
+      - KEY=${KEY}
+      - MQTT_USER=${MQTT_USER}
+      - MQTT_PASSWORD=${MQTT_PASSWORD}
+    depends_on:
+      - rabbitmq
+
+volumes:
+  rabbitmq_data:
