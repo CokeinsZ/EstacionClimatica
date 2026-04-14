@@ -59,7 +59,7 @@ while True:
         client.connect(BROKER, 1883)
         break
     except Exception as e:
-        print(f"Error al conectar: {e}. Reintentando en 1 segundos...")
+        print(f"Error. Reintentando en 1 segundos...")
         time.sleep(1)
 
 client.loop_forever()
