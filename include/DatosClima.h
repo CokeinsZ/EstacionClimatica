@@ -1,9 +1,9 @@
 struct DatosLocales {
   float tempLocal;
+  float humLocal;
   float altLocal;
   float presLocal;
   int calidadAire;
-  int luz;
 };
 
 struct Pronosticos {

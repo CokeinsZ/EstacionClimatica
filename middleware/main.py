@@ -24,10 +24,10 @@ def on_message(client, userdata, msg):
 
         data = {
             "templocal": float(evento.get("tempLocal", 0)),
+            "humlocal": float(evento.get("humLocal", 0)),
             "altlocal": float(evento.get('altLocal') or 0.0),
             "preslocal": float(evento.get("presLocal", 0)),
             "calidadaire": int(evento.get("calidadAire", 0)),
-            "luz": int(evento.get("luz", 0)),
             "vientopronostico": float(evento.get("vientoPronostico", 0)),
             "lluviapronostico": float(evento.get("lluviaPronostico", 0)),
             "temppronostico": float(evento.get("tempPronostico", 0))

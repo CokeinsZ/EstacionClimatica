@@ -1,6 +1,7 @@
 #include <WiFi.h>
 #include <HTTPClient.h>
 #include <Wire.h>
+#include <MQ135.h>
 #include <Adafruit_Sensor.h>
 #include <Adafruit_BME280.h>
 #include <LiquidCrystal_I2C.h>
@@ -19,19 +20,19 @@ const char* mqtt_server = "mqtt.cokeinsz.com";
 const char* MQTT_USER = "iot_device";
 const char* MQTT_PASSWORD = "SecurePass123!";
 
-Adafruit_BME280 bme;
-LiquidCrystal_I2C lcd(0x27, 16, 2);
-
 #define I2C_SDA 17
 #define I2C_SCL 18
 
 const int pinMQ135 = 2;
-const int pinLDR = 1;
 const int lcdCols = 16;
 const int lcdRows = 2;
 const unsigned long tiempoTituloMs = 2000;
 const unsigned long scrollPasoMs = 450;
 const unsigned long pausaDatoMs = 1000;
+
+Adafruit_BME280 bme;
+LiquidCrystal_I2C lcd(0x27, 16, 2);
+MQ135 sensorAire = MQ135(pinMQ135); // Crear el objeto
 
 // ---OpenMeteo---
 // Trae la velocidad del viento actual y la probabilidad máxima de lluvia de hoy
@@ -84,10 +85,10 @@ void obtenerPronosticos() {
 
 void leerSensores() {
   datosLocales.tempLocal = bme.readTemperature();
-  datosLocales.altLocal = bme.readAltitude(0);
+  datosLocales.humLocal = bme.readHumidity();
+  datosLocales.altLocal = bme.readAltitude(1013.25);
   datosLocales.presLocal = bme.readPressure() / 100.0F;
-  datosLocales.calidadAire = analogRead(pinMQ135);
-  datosLocales.luz = analogRead(pinLDR);
+  datosLocales.calidadAire = sensorAire.getCorrectedPPM(datosLocales.tempLocal, datosLocales.humLocal);
 }
 
 String rellenarDerecha(const String& texto, int longitud) {
@@ -139,18 +140,17 @@ void mostrarPronosticos() {
 
   Serial.println("--- Datos de la Estacion ---");
   Serial.printf("Temp Local: %.2f *C\n", datosLocales.tempLocal);
+  Serial.printf("Humedad Local: %.2f %%\n", datosLocales.humLocal);
   Serial.printf("Altura Local: %.2f m\n", datosLocales.altLocal);
-  Serial.printf("Calidad Aire (Raw): %d\n", datosLocales.calidadAire);
-  Serial.printf("Luminosidad (Raw): %d\n", datosLocales.luz);
+  Serial.printf("Calidad Aire (CO2): %d\n", datosLocales.calidadAire);
   Serial.printf("Viento Pronosticado: %.2f km/h\n", pronosticos.vientoPronostico);
   Serial.printf("Probabilidad Lluvia: %.2f %%\n\n", pronosticos.lluviaPronostico);
-
+  
   mostrarTituloSeccion("Datos locales");
   mostrarCinta("Datos locales", "Temp: " + String(datosLocales.tempLocal, 1) + " C");
   mostrarCinta("Datos locales", "Presion: " + String(datosLocales.presLocal, 1) + " hPa");
   mostrarCinta("Datos locales", "Altura: " + String(datosLocales.altLocal, 1) + " m");
-  mostrarCinta("Datos locales", "Aire RAW: " + String(datosLocales.calidadAire));
-  mostrarCinta("Datos locales", "Luz RAW: " + String(datosLocales.luz));
+  mostrarCinta("Datos locales", "Aire CO2: " + String(datosLocales.calidadAire));
 
   mostrarTituloSeccion("Pronostico");
   mostrarCinta("Pronostico", "Temp: " + String(pronosticos.tempPronostico, 1) + " C");
@@ -187,10 +187,10 @@ void enviarDatosMQTT() {
 
   // Asignamos las lecturas de los sensores locales
   doc["tempLocal"] = datosLocales.tempLocal;
+  doc["humLocal"] = datosLocales.humLocal;
   doc["altLocal"] = datosLocales.altLocal;
   doc["presLocal"] = datosLocales.presLocal;
   doc["calidadAire"] = datosLocales.calidadAire;
-  doc["luz"] = datosLocales.luz;
 
   // Asignamos los datos obtenidos de OpenMeteo
   doc["vientoPronostico"] = pronosticos.vientoPronostico;
@@ -212,7 +212,9 @@ void setup() {
   Serial.begin(115200);
   delay(1000);
   Serial.println("Iniciando estación meteorológica...");
-  
+
+  analogReadResolution(8);
+
   Wire.begin(I2C_SDA, I2C_SCL);
   Serial.printf("I2C iniciado en SDA=%d, SCL=%d\n", I2C_SDA, I2C_SCL);
 
@@ -234,5 +236,5 @@ void loop() {
   reconectarMQTT();
   enviarDatosMQTT();
 
-  delay(10000); 
+  delay(1000); 
 }
