@@ -141,16 +141,16 @@ void mostrarPronosticos() {
   Serial.println("--- Datos de la Estacion ---");
   Serial.printf("Temp Local: %.2f *C\n", datosLocales.tempLocal);
   Serial.printf("Humedad Local: %.2f %%\n", datosLocales.humLocal);
-  Serial.printf("Altura Local: %.2f m\n", datosLocales.altLocal);
-  Serial.printf("Calidad Aire (CO2): %d\n", datosLocales.calidadAire);
+  Serial.printf("Altura Local: %.2f msnv\n", datosLocales.altLocal);
+  Serial.printf("Calidad Aire (CO2): %d ppm\n", datosLocales.calidadAire);
   Serial.printf("Viento Pronosticado: %.2f km/h\n", pronosticos.vientoPronostico);
   Serial.printf("Probabilidad Lluvia: %.2f %%\n\n", pronosticos.lluviaPronostico);
   
   mostrarTituloSeccion("Datos locales");
   mostrarCinta("Datos locales", "Temp: " + String(datosLocales.tempLocal, 1) + " C");
   mostrarCinta("Datos locales", "Presion: " + String(datosLocales.presLocal, 1) + " hPa");
-  mostrarCinta("Datos locales", "Altura: " + String(datosLocales.altLocal, 1) + " m");
-  mostrarCinta("Datos locales", "Aire CO2: " + String(datosLocales.calidadAire));
+  mostrarCinta("Datos locales", "Altura: " + String(datosLocales.altLocal, 1) + " msnv");
+  mostrarCinta("Datos locales", "Aire CO2: " + String(datosLocales.calidadAire) + " ppm");
 
   mostrarTituloSeccion("Pronostico");
   mostrarCinta("Pronostico", "Temp: " + String(pronosticos.tempPronostico, 1) + " C");
