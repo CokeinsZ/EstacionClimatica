@@ -8,4 +8,4 @@ RUN pip install paho-mqtt supabase python-dotenv
 COPY middleware/main.py .
 
 # Ejecutar el script sin buffer de consola para ver los logs en tiempo real
-CMD ["python", "main.py"]
+CMD ["python", "-u", "main.py"]

@@ -1,9 +1,6 @@
-version: '3.8'
-
 services:
   rabbitmq:
     image: rabbitmq:3-management
-    container_name: rabbitmq_iot
     environment:
       RABBITMQ_DEFAULT_USER: ${MQTT_USER}
       RABBITMQ_DEFAULT_PASS: ${MQTT_PASSWORD}
@@ -18,7 +15,6 @@ services:
 
   iot_logger:
     build: .
-    container_name: python_iot_logger
     restart: unless-stopped
     environment:
       - URL=${URL}

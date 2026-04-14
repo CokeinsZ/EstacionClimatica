@@ -231,6 +231,8 @@ void setup() {
 
 void loop() {
   mostrarPronosticos();
+  reconectarMQTT();
+  enviarDatosMQTT();
 
   delay(10000); 
 }
