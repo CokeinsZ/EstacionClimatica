@@ -32,14 +32,14 @@ const unsigned long pausaDatoMs = 1000;
 
 Adafruit_BME280 bme;
 LiquidCrystal_I2C lcd(0x27, 16, 2);
-MQ135 sensorAire = MQ135(pinMQ135); // Crear el objeto
+MQ135 sensorAire = MQ135(pinMQ135);
 
-// ---OpenMeteo---
-// Trae la velocidad del viento actual y la probabilidad máxima de lluvia de hoy
 const String urlMeteo = "https://api.open-meteo.com/v1/forecast?latitude=5.066&longitude=-75.499&current=temperature_2m,wind_speed_10m&daily=precipitation_probability_max&timezone=America/Bogota&forecast_days=1";
 
 DatosLocales datosLocales;
 Pronosticos pronosticos;
+
+SemaphoreHandle_t mutexDatos;
 
 void conectarWiFi() {
   WiFi.begin(ssid, password);
@@ -61,34 +61,41 @@ void incializarLcd() {
 }
 
 void obtenerPronosticos() {
-  if (WiFi.status() == WL_CONNECTED) {
-    HTTPClient http;
-    http.begin(urlMeteo);
-    int httpResponseCode = http.GET();
+  HTTPClient http;
+  http.begin(urlMeteo);
+  int httpResponseCode = http.GET();
 
-    if (httpResponseCode > 0) {
-      String payload = http.getString();
-      
-      DynamicJsonDocument doc(1024);
-      deserializeJson(doc, payload);
-      
-      pronosticos.vientoPronostico = doc["current"]["wind_speed_10m"];
-      pronosticos.lluviaPronostico = doc["daily"]["precipitation_probability_max"][0];
-      pronosticos.tempPronostico = doc["current"]["temperature_2m"];
-    } else {
-      Serial.print("Error en peticion HTTP: ");
-      Serial.println(httpResponseCode);
-    }
-    http.end();
+  if (httpResponseCode > 0) {
+    String payload = http.getString();
+    DynamicJsonDocument doc(1024);
+    deserializeJson(doc, payload);
+    
+    xSemaphoreTake(mutexDatos, portMAX_DELAY);
+    pronosticos.vientoPronostico = doc["current"]["wind_speed_10m"];
+    pronosticos.lluviaPronostico = doc["daily"]["precipitation_probability_max"][0];
+    pronosticos.tempPronostico = doc["current"]["temperature_2m"];
+    xSemaphoreGive(mutexDatos);
   }
+
+  http.end();
 }
 
 void leerSensores() {
-  datosLocales.tempLocal = bme.readTemperature();
-  datosLocales.humLocal = bme.readHumidity();
-  datosLocales.altLocal = bme.readAltitude(1013.25);
-  datosLocales.presLocal = bme.readPressure() / 100.0F;
-  datosLocales.calidadAire = sensorAire.getCorrectedPPM(datosLocales.tempLocal, datosLocales.humLocal);
+  float t = bme.readTemperature();
+  float h = bme.readHumidity();
+  float a = bme.readAltitude(1013.25);
+  float p = bme.readPressure() / 100.0F;
+  int cal = sensorAire.getCorrectedPPM(t, h);
+
+  xSemaphoreTake(mutexDatos, portMAX_DELAY);
+
+  datosLocales.tempLocal = t;
+  datosLocales.humLocal = h;
+  datosLocales.altLocal = a;
+  datosLocales.presLocal = p;
+  datosLocales.calidadAire = cal;
+  
+  xSemaphoreGive(mutexDatos);
 }
 
 String rellenarDerecha(const String& texto, int longitud) {
@@ -111,8 +118,6 @@ void mostrarTituloSeccion(const String& titulo) {
 void mostrarCinta(const String& encabezado, const String& dato) {
   String encabezadoAjustado = rellenarDerecha(encabezado.substring(0, lcdCols), lcdCols);
   String mensaje = dato + "    ";
-
-  // Espacios iniciales para que el texto entre de derecha a izquierda.
   String cinta = String("                ") + mensaje;
 
   lcd.clear();
@@ -120,9 +125,7 @@ void mostrarCinta(const String& encabezado, const String& dato) {
   lcd.print(encabezadoAjustado);
 
   int pasos = cinta.length() - lcdCols;
-  if (pasos < 0) {
-    pasos = 0;
-  }
+  if (pasos < 0) pasos = 0;
 
   for (int i = 0; i <= pasos; i++) {
     lcd.setCursor(0, 1);
@@ -133,78 +136,100 @@ void mostrarCinta(const String& encabezado, const String& dato) {
   delay(pausaDatoMs);
 }
 
-void mostrarPronosticos() {
-  leerSensores();
-
-  obtenerPronosticos();
-
-  Serial.println("--- Datos de la Estacion ---");
-  Serial.printf("Temp Local: %.2f *C\n", datosLocales.tempLocal);
-  Serial.printf("Humedad Local: %.2f %%\n", datosLocales.humLocal);
-  Serial.printf("Altura Local: %.2f msnv\n", datosLocales.altLocal);
-  Serial.printf("Calidad Aire (CO2): %d ppm\n", datosLocales.calidadAire);
-  Serial.printf("Viento Pronosticado: %.2f km/h\n", pronosticos.vientoPronostico);
-  Serial.printf("Probabilidad Lluvia: %.2f %%\n\n", pronosticos.lluviaPronostico);
-  
+void mostrarDatosEnLCD(Pronosticos pronos, DatosLocales datos) {
   mostrarTituloSeccion("Datos locales");
-  mostrarCinta("Datos locales", "Temp: " + String(datosLocales.tempLocal, 1) + " C");
-  mostrarCinta("Datos locales", "Presion: " + String(datosLocales.presLocal, 1) + " hPa");
-  mostrarCinta("Datos locales", "Altura: " + String(datosLocales.altLocal, 1) + " msnv");
-  mostrarCinta("Datos locales", "Aire CO2: " + String(datosLocales.calidadAire) + " ppm");
+  mostrarCinta("Datos locales", "Temp: " + String(datos.tempLocal, 1) + " C");
+  mostrarCinta("Datos locales", "Presion: " + String(datos.presLocal, 1) + " hPa");
+  mostrarCinta("Datos locales", "Altura: " + String(datos.altLocal, 1) + " msnv");
+  mostrarCinta("Datos locales", "Aire CO2: " + String(datos.calidadAire) + " ppm");
 
   mostrarTituloSeccion("Pronostico");
-  mostrarCinta("Pronostico", "Temp: " + String(pronosticos.tempPronostico, 1) + " C");
-  mostrarCinta("Pronostico", "Viento: " + String(pronosticos.vientoPronostico, 1) + " km/h");
-  mostrarCinta("Pronostico", "Lluvia: " + String(pronosticos.lluviaPronostico, 1) + " %");
+  mostrarCinta("Pronostico", "Temp: " + String(pronos.tempPronostico, 1) + " C");
+  mostrarCinta("Pronostico", "Viento: " + String(pronos.vientoPronostico, 1) + " km/h");
+  mostrarCinta("Pronostico", "Lluvia: " + String(pronos.lluviaPronostico, 1) + " %");
+}
+
+void imprimirDatosSerial(Pronosticos pronos, DatosLocales datos) {
+  Serial.println("=== Datos Locales ===");
+  Serial.printf("Temperatura: %.1f C\n", datos.tempLocal);
+  Serial.printf("Humedad: %.1f %%\n", datos.humLocal);
+  Serial.printf("Altitud: %.1f msnv\n", datos.altLocal);
+  Serial.printf("Presión: %.1f hPa\n", datos.presLocal);
+  Serial.printf("Calidad del Aire (CO2): %d ppm\n", datosLocales.calidadAire);
+
+  Serial.println("\n=== Pronóstico ===");
+  Serial.printf("Temperatura Pronosticada: %.1f C\n", pronos.tempPronostico);
+  Serial.printf("Velocidad del Viento Pronosticada: %.1f km/h\n", pronos.vientoPronostico);
+  Serial.printf("Probabilidad de Lluvia Pronosticada: %.1f %%\n", pronos.lluviaPronostico);
 }
 
 void reconectarMQTT() {
   while (!mqttClient.connected()) {
     Serial.print("Intentando conexión MQTT...");
-    // Crear un ID de cliente aleatorio para evitar colisiones
     String clientId = "ESP32S3-Weather-";
     clientId += String(random(0xffff), HEX);
 
     if (mqttClient.connect(clientId.c_str(), MQTT_USER, MQTT_PASSWORD)) {
       Serial.println("Conectado al broker MQTT");
     } else {
-      Serial.print("Falló, rc=");
-      Serial.print(mqttClient.state());
-      Serial.println(" Intentando de nuevo en 5 segundos...");
-      delay(5000);
+      Serial.print("Falló MQTT. Reintento próximo ciclo.");
     }
   }
 }
 
 void enviarDatosMQTT() {
-  if (!mqttClient.connected()) {
-    reconectarMQTT();
-  }
   mqttClient.loop();
+  StaticJsonDocument<256> mqttDoc;
 
-  // Creamos el documento JSON con capacidad suficiente
-  StaticJsonDocument<256> doc;
-
-  // Asignamos las lecturas de los sensores locales
-  doc["tempLocal"] = datosLocales.tempLocal;
-  doc["humLocal"] = datosLocales.humLocal;
-  doc["altLocal"] = datosLocales.altLocal;
-  doc["presLocal"] = datosLocales.presLocal;
-  doc["calidadAire"] = datosLocales.calidadAire;
-
-  // Asignamos los datos obtenidos de OpenMeteo
-  doc["vientoPronostico"] = pronosticos.vientoPronostico;
-  doc["lluviaPronostico"] = pronosticos.lluviaPronostico;
-  doc["tempPronostico"] = pronosticos.tempPronostico;
+  xSemaphoreTake(mutexDatos, portMAX_DELAY);
+  mqttDoc["tempLocal"] = datosLocales.tempLocal;
+  mqttDoc["humLocal"] = datosLocales.humLocal;
+  mqttDoc["altLocal"] = datosLocales.altLocal;
+  mqttDoc["presLocal"] = datosLocales.presLocal;
+  mqttDoc["calidadAire"] = datosLocales.calidadAire;
+  mqttDoc["vientoPronostico"] = pronosticos.vientoPronostico;
+  mqttDoc["lluviaPronostico"] = pronosticos.lluviaPronostico;
+  mqttDoc["tempPronostico"] = pronosticos.tempPronostico;
+  xSemaphoreGive(mutexDatos);
 
   char buffer[256];
-  size_t n = serializeJson(doc, buffer);
+  size_t n = serializeJson(mqttDoc, buffer);
 
   if (mqttClient.publish("estacion/clima", buffer, n)) {
-    Serial.println("Datos de clima publicados correctamente:");
-    Serial.println(buffer);
+    Serial.println("[Núcleo 1] Datos publicados en MQTT correctamente.");
   } else {
-    Serial.println("Error al publicar en MQTT.");
+    Serial.println("[Núcleo 1] Error al publicar en MQTT.");
+  }
+}
+
+void TareaSensoresLCD(void *pvParameters) {
+  for (;;) {
+    leerSensores();
+
+    xSemaphoreTake(mutexDatos, portMAX_DELAY);
+    Pronosticos pronosCopia = pronosticos;
+    DatosLocales datosCopia = datosLocales;
+    xSemaphoreGive(mutexDatos);
+
+    imprimirDatosSerial(pronosCopia, datosCopia);
+    mostrarDatosEnLCD(pronosCopia, datosCopia);
+
+  }
+}
+
+void TareaRedes(void *pvParameters) {
+  for (;;) {
+    if (WiFi.status() == WL_CONNECTED) {
+      obtenerPronosticos();
+
+      reconectarMQTT();
+      enviarDatosMQTT();
+
+    } else {
+      WiFi.reconnect();
+    }
+    
+    vTaskDelay(pdMS_TO_TICKS(5000));
   }
 }
 
@@ -219,22 +244,37 @@ void setup() {
   Serial.printf("I2C iniciado en SDA=%d, SCL=%d\n", I2C_SDA, I2C_SCL);
 
   incializarLcd();
+  lcd.clear();
 
-  Serial.println(bme.sensorID());
   if (!bme.begin(0x76)) { 
-    Serial.println("No se encontro un BME280 valido, revisa las conexiones!");
+    Serial.println("¡No se encontro un BME280 valido!");
   }
 
   conectarWiFi();
-  lcd.clear();
-
   mqttClient.setServer(mqtt_server, 1883);
+
+  mutexDatos = xSemaphoreCreateMutex();
+  obtenerPronosticos();
+  xTaskCreatePinnedToCore(
+    TareaSensoresLCD,
+    "Tarea_Sensores",
+    10000,
+    NULL,
+    1,
+    NULL,
+    0
+  );
+
+  xTaskCreatePinnedToCore(
+    TareaRedes,         
+    "Tarea_Redes",      
+    10000,              
+    NULL,               
+    1,                  
+    NULL,               
+    1
+  );
+
 }
 
-void loop() {
-  mostrarPronosticos();
-  reconectarMQTT();
-  enviarDatosMQTT();
-
-  delay(1000); 
-}
+void loop() {}
