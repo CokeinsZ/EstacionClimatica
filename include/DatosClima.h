@@ -1,9 +1,15 @@
+struct CalidadAire {
+  int co2;
+  int co;
+  int inflamables;
+};
+
 struct DatosLocales {
   float tempLocal;
   float humLocal;
   float altLocal;
   float presLocal;
-  int calidadAire;
+  CalidadAire calidadAire;
 };
 
 struct Pronosticos {

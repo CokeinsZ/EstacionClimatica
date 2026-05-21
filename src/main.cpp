@@ -1,7 +1,6 @@
 #include <WiFi.h>
 #include <HTTPClient.h>
 #include <Wire.h>
-#include <MQ135.h>
 #include <Adafruit_Sensor.h>
 #include <Adafruit_BME280.h>
 #include <LiquidCrystal_I2C.h>
@@ -23,7 +22,9 @@ const char* MQTT_PASSWORD = "SecurePass123!";
 #define I2C_SDA 17
 #define I2C_SCL 18
 
-const int pinMQ135 = 2;
+const int pinMQ135 = 10;
+const int pinMQ7 = 11;
+const int pinMQ5 = 12;
 const int lcdCols = 16;
 const int lcdRows = 2;
 const unsigned long tiempoTituloMs = 2000;
@@ -32,7 +33,6 @@ const unsigned long pausaDatoMs = 1000;
 
 Adafruit_BME280 bme;
 LiquidCrystal_I2C lcd(0x27, 16, 2);
-MQ135 sensorAire = MQ135(pinMQ135);
 
 const String urlMeteo = "https://api.open-meteo.com/v1/forecast?latitude=5.066&longitude=-75.499&current=temperature_2m,wind_speed_10m&daily=precipitation_probability_max&timezone=America/Bogota&forecast_days=1";
 
@@ -85,7 +85,9 @@ void leerSensores() {
   float h = bme.readHumidity();
   float a = bme.readAltitude(1013.25);
   float p = bme.readPressure() / 100.0F;
-  int cal = sensorAire.getCorrectedPPM(t, h);
+  int mq135 = analogRead(pinMQ135) ;
+  int mq7 = analogRead(pinMQ7);
+  int mq5 = analogRead(pinMQ5);
 
   xSemaphoreTake(mutexDatos, portMAX_DELAY);
 
@@ -93,7 +95,9 @@ void leerSensores() {
   datosLocales.humLocal = h;
   datosLocales.altLocal = a;
   datosLocales.presLocal = p;
-  datosLocales.calidadAire = cal;
+  datosLocales.calidadAire.co2 = mq135;
+  datosLocales.calidadAire.co = mq7;
+  datosLocales.calidadAire.inflamables = mq5;
   
   xSemaphoreGive(mutexDatos);
 }
@@ -141,7 +145,8 @@ void mostrarDatosEnLCD(Pronosticos pronos, DatosLocales datos) {
   mostrarCinta("Datos locales", "Temp: " + String(datos.tempLocal, 1) + " C");
   mostrarCinta("Datos locales", "Presion: " + String(datos.presLocal, 1) + " hPa");
   mostrarCinta("Datos locales", "Altura: " + String(datos.altLocal, 1) + " msnv");
-  mostrarCinta("Datos locales", "Aire CO2: " + String(datos.calidadAire) + " ppm");
+  mostrarCinta("Datos aire", "CO2:" + String(datos.calidadAire.co2) + " CO:" + String(datos.calidadAire.co));
+  mostrarCinta("Datos aire", "Inflamables:" + String(datos.calidadAire.inflamables));
 
   mostrarTituloSeccion("Pronostico");
   mostrarCinta("Pronostico", "Temp: " + String(pronos.tempPronostico, 1) + " C");
@@ -155,7 +160,9 @@ void imprimirDatosSerial(Pronosticos pronos, DatosLocales datos) {
   Serial.printf("Humedad: %.1f %%\n", datos.humLocal);
   Serial.printf("Altitud: %.1f msnv\n", datos.altLocal);
   Serial.printf("Presión: %.1f hPa\n", datos.presLocal);
-  Serial.printf("Calidad del Aire (CO2): %d ppm\n", datosLocales.calidadAire);
+  Serial.printf("MQ135: %d\n", datos.calidadAire.co2);
+  Serial.printf("MQ7: %d\n", datos.calidadAire.co);
+  Serial.printf("MQ5: %d\n", datos.calidadAire.inflamables);
 
   Serial.println("\n=== Pronóstico ===");
   Serial.printf("Temperatura Pronosticada: %.1f C\n", pronos.tempPronostico);
@@ -179,20 +186,22 @@ void reconectarMQTT() {
 
 void enviarDatosMQTT() {
   mqttClient.loop();
-  StaticJsonDocument<256> mqttDoc;
+  StaticJsonDocument<400> mqttDoc;
 
   xSemaphoreTake(mutexDatos, portMAX_DELAY);
   mqttDoc["tempLocal"] = datosLocales.tempLocal;
   mqttDoc["humLocal"] = datosLocales.humLocal;
   mqttDoc["altLocal"] = datosLocales.altLocal;
   mqttDoc["presLocal"] = datosLocales.presLocal;
-  mqttDoc["calidadAire"] = datosLocales.calidadAire;
+  mqttDoc["calidadAire"]["co2"] = datosLocales.calidadAire.co2;
+  mqttDoc["calidadAire"]["co"] = datosLocales.calidadAire.co;
+  mqttDoc["calidadAire"]["inflamables"] = datosLocales.calidadAire.inflamables;
   mqttDoc["vientoPronostico"] = pronosticos.vientoPronostico;
   mqttDoc["lluviaPronostico"] = pronosticos.lluviaPronostico;
   mqttDoc["tempPronostico"] = pronosticos.tempPronostico;
   xSemaphoreGive(mutexDatos);
 
-  char buffer[256];
+  char buffer[400];
   size_t n = serializeJson(mqttDoc, buffer);
 
   if (mqttClient.publish("estacion/clima", buffer, n)) {
@@ -238,7 +247,7 @@ void setup() {
   delay(1000);
   Serial.println("Iniciando estación meteorológica...");
 
-  analogReadResolution(8);
+  //analogReadResolution(8);
 
   Wire.begin(I2C_SDA, I2C_SCL);
   Serial.printf("I2C iniciado en SDA=%d, SCL=%d\n", I2C_SDA, I2C_SCL);
@@ -249,6 +258,10 @@ void setup() {
   if (!bme.begin(0x76)) { 
     Serial.println("¡No se encontro un BME280 valido!");
   }
+
+  pinMode(pinMQ135, INPUT);
+  pinMode(pinMQ7, INPUT);
+  pinMode(pinMQ5, INPUT);
 
   conectarWiFi();
   mqttClient.setServer(mqtt_server, 1883);

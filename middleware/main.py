@@ -30,12 +30,17 @@ def on_message(client, userdata, msg):
     payload = msg.payload.decode(errors="replace")
     try:
         evento = json.loads(payload)
+        calidad_aire = evento.get("calidadAire", {}) or {}
         data = {
             "templocal": float(evento.get("tempLocal", 0)),
             "humlocal": float(evento.get("humLocal", 0)),
             "altlocal": float(evento.get('altLocal') or 0.0),
             "preslocal": float(evento.get("presLocal", 0)),
-            "calidadaire": int(evento.get("calidadAire", 0)),
+            "calidadaire": {
+                "co2": int(calidad_aire.get("co2", 0)),
+                "co": int(calidad_aire.get("co", 0)),
+                "inflamables": int(calidad_aire.get("inflamables", 0))
+            },
             "vientopronostico": float(evento.get("vientoPronostico", 0)),
             "lluviapronostico": float(evento.get("lluviaPronostico", 0)),
             "temppronostico": float(evento.get("tempPronostico", 0))
