@@ -2,7 +2,7 @@ FROM python:3.11-slim
 
 WORKDIR /app
 
-RUN pip install paho-mqtt supabase python-dotenv
+RUN pip install paho-mqtt supabase python-dotenv fastapi uvicorn httpx
 
 # Copiar el script
 COPY middleware/main.py .

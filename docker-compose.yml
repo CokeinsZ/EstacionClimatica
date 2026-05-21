@@ -16,6 +16,8 @@ services:
   iot_logger:
     build: .
     restart: unless-stopped
+    ports:
+      - 8000
     environment:
       - URL=${URL}
       - KEY=${KEY}
